@@ -1,4 +1,4 @@
-package org.example;
+package org.example.nettyUdp;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;

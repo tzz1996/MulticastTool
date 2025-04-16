@@ -1,4 +1,4 @@
-package org.example;
+package org.example.nettyUdp;
 
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;

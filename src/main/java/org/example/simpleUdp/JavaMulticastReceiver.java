@@ -1,4 +1,4 @@
-package org.example;
+package org.example.simpleUdp;
 
 import java.net.DatagramPacket;
 import java.net.InetAddress;
