@@ -23,6 +23,18 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MulticastReceiver {
     // 存储组播组和对应的消息处理器
     private static final Map<MulticastConfig.MulticastGroup, MulticastMessageHandler> handlers = new ConcurrentHashMap<>();
+    // 一个组播端口对应一个channel通信
+    private static final List<Channel> channels = new ArrayList<>();
+    
+    // 添加管理 Channel 的方法
+    private static void addChannel(Channel channel) {
+        channels.add(channel);
+    }
+    
+    private static void removeChannel(Channel channel) {
+        channels.remove(channel);
+        channel.close();
+    }
     
     /**
      * 注册组播消息处理器
@@ -49,7 +61,7 @@ public class MulticastReceiver {
         EventLoopGroup group = new NioEventLoopGroup();
         try {
             // 为每个组播组创建单独的channel
-            List<Channel> channels = new ArrayList<>();
+            // List<Channel> channels = new ArrayList<>();
             
             // 遍历所有组播组配置
             for (MulticastConfig.MulticastGroup multicastGroup : groupToClassNames.keySet()) {
@@ -81,7 +93,7 @@ public class MulticastReceiver {
                         });
 
                 Channel channel = bootstrap.bind(multicastGroup.getPort()).sync().channel();
-                channels.add(channel);
+                addChannel(channel);
                 
                 // 获取所有网络接口并加入组播组
                 Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
