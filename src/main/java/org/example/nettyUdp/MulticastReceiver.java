@@ -41,14 +41,18 @@ public class MulticastReceiver {
         handlers.remove(group);
     }
 
-    private static void joinMulticastGroups(Map<MulticastConfig.MulticastGroup, List<String>> groupMessages) throws Exception {
+    /**
+     * 添加组播监听
+     * @param groupToClassNames 所有组播端口-实体名称列表信息
+     */
+    private static void joinMulticastGroups(Map<MulticastConfig.MulticastGroup, List<String>> groupToClassNames) throws Exception {
         EventLoopGroup group = new NioEventLoopGroup();
         try {
             // 为每个组播组创建单独的channel
             List<Channel> channels = new ArrayList<>();
             
             // 遍历所有组播组配置
-            for (MulticastConfig.MulticastGroup multicastGroup : groupMessages.keySet()) {
+            for (MulticastConfig.MulticastGroup multicastGroup : groupToClassNames.keySet()) {
                 Bootstrap bootstrap = new Bootstrap();
                 bootstrap.group(group)
                         .channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
@@ -64,7 +68,7 @@ public class MulticastReceiver {
                                         MulticastMessageHandler handler = handlers.get(multicastGroup);
                                         if (handler != null) {
                                             // 调用自定义的消息处理器
-                                            handler.handleMessage(multicastGroup, msg);
+                                            handler.handleMessage(multicastGroup, groupToClassNames.get(multicastGroup) ,msg);
                                         } else {
                                             // 如果没有注册处理器，使用默认处理方式
                                             ByteBuf content = msg.content();
@@ -115,18 +119,18 @@ public class MulticastReceiver {
     public static void main(String[] args) throws Exception {
         // 解析XML配置文件
         String configPath = new File("multicast-config.xml").getAbsolutePath();
-        Map<MulticastConfig.MulticastGroup, List<String>> groupMessages = MulticastConfig.parseXmlConfig(configPath);
+        Map<MulticastConfig.MulticastGroup, List<String>> groupToClassNames = MulticastConfig.parseXmlConfig(configPath);
         
         // 打印配置信息
         System.out.println("Loaded multicast configuration:");
-        for (Map.Entry<MulticastConfig.MulticastGroup, List<String>> entry : groupMessages.entrySet()) {
+        for (Map.Entry<MulticastConfig.MulticastGroup, List<String>> entry : groupToClassNames.entrySet()) {
             System.out.println("Group: " + entry.getKey());
-            System.out.println("Messages: " + entry.getValue());
+            System.out.println("ClassNames: " + entry.getValue());
         }
 
         // 示例：注册自定义消息处理器
         registerHandler(new MulticastConfig.MulticastGroup("239.255.27.1", 8888), new TestHandler());
 
-        joinMulticastGroups(groupMessages);
+        joinMulticastGroups(groupToClassNames);
     }
 } 

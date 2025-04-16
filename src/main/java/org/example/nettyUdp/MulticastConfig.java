@@ -83,7 +83,7 @@ public class MulticastConfig {
         @JacksonXmlProperty(isAttribute = true)
         private int port;
 
-        @JacksonXmlProperty(localName = "message")
+        @JacksonXmlProperty(localName = "className")
         @JacksonXmlElementWrapper(useWrapping = false)
         private List<String> messages;
 
