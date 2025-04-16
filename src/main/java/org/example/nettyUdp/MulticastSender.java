@@ -12,13 +12,42 @@ import io.netty.util.CharsetUtil;
 import java.net.InetSocketAddress;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 public class MulticastSender {
     private static final EventLoopGroup group = new NioEventLoopGroup();
     private static Channel channel;
-    private static final Map<MulticastConfig.MulticastGroup, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
+    private static final Map<ScheduledTaskKey, ScheduledFuture<?>> scheduledTasks = new ConcurrentHashMap<>();
+    
+    // 创建固定大小的线程池
+    private static final ExecutorService executorService = Executors.newFixedThreadPool(10);  // 根据CPU核心数调整
+    
+    // 使用复合键来区分同一个组播组的不同消息
+    private static class ScheduledTaskKey {
+        private final MulticastConfig.MulticastGroup group;
+        private final String message;
+        
+        public ScheduledTaskKey(MulticastConfig.MulticastGroup group, String message) {
+            this.group = group;
+            this.message = message;
+        }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            ScheduledTaskKey that = (ScheduledTaskKey) o;
+            return group.equals(that.group) && message.equals(that.message);
+        }
+        
+        @Override
+        public int hashCode() {
+            return 31 * group.hashCode() + message.hashCode();
+        }
+    }
 
     static {
         try {
@@ -78,30 +107,51 @@ public class MulticastSender {
      */
     public static void startScheduledSend(MulticastConfig.MulticastGroup multicastGroup, String message, 
             long initialDelay, long period) throws Exception {
+        ScheduledTaskKey key = new ScheduledTaskKey(multicastGroup, message);
+        
         // 如果已经存在该组播组的定时任务，先停止它
-        stopScheduledSend(multicastGroup);
+        stopScheduledSend(multicastGroup, message);
 
         ScheduledFuture<?> future = group.scheduleAtFixedRate(() -> {
-            try {
-                sendMessage(multicastGroup, message);
-            } catch (Exception e) {
-                e.printStackTrace();
-                stopScheduledSend(multicastGroup); // 发生错误时停止定时发送
-            }
+            // 使用线程池执行发送任务
+            executorService.submit(() -> {
+                try {
+                    sendMessage(multicastGroup, message);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    stopScheduledSend(multicastGroup, message);
+                }
+            });
         }, initialDelay, period, TimeUnit.MILLISECONDS);
 
-        scheduledTasks.put(multicastGroup, future);
+        scheduledTasks.put(key, future);
     }
 
     /**
-     * 停止指定组播组的定时发送
+     * 停止指定组播组的指定消息的定时发送
      * @param multicastGroup 要停止的组播组
+     * @param message 要停止的消息
      */
-    public static void stopScheduledSend(MulticastConfig.MulticastGroup multicastGroup) {
-        ScheduledFuture<?> future = scheduledTasks.remove(multicastGroup);
+    public static void stopScheduledSend(MulticastConfig.MulticastGroup multicastGroup, String message) {
+        ScheduledTaskKey key = new ScheduledTaskKey(multicastGroup, message);
+        ScheduledFuture<?> future = scheduledTasks.remove(key);
         if (future != null) {
             future.cancel(false);
         }
+    }
+
+    /**
+     * 停止指定组播组的所有消息的定时发送
+     * @param multicastGroup 要停止的组播组
+     */
+    public static void stopScheduledSend(MulticastConfig.MulticastGroup multicastGroup) {
+        scheduledTasks.entrySet().removeIf(entry -> {
+            if (entry.getKey().group.equals(multicastGroup)) {
+                entry.getValue().cancel(false);
+                return true;
+            }
+            return false;
+        });
     }
 
     /**
@@ -137,7 +187,8 @@ public class MulticastSender {
             MulticastConfig.MulticastGroup group3 = new MulticastConfig.MulticastGroup("239.255.27.3", 8890);
 
             // 为每个组播组启动定时发送，使用不同的发送间隔
-            MulticastSender.startScheduledSend(group1, "Message to group 1", 0, 1000); // 每秒发送一次
+            MulticastSender.startScheduledSend(group1, "Message1 to group 1", 0, 1000); // 每秒发送一次
+            MulticastSender.startScheduledSend(group1, "Message2 to group 1", 0, 1000); // 每秒发送一次
             MulticastSender.startScheduledSend(group2, "Message to group 2", 0, 2000); // 每2秒发送一次
             MulticastSender.startScheduledSend(group3, "Message to group 3", 0, 3000); // 每3秒发送一次
 
@@ -179,7 +230,7 @@ public class MulticastSender {
      * 测试方法，用于与MulticastReceiver配合测试
      */
     public static void main(String[] args) throws Exception {
-       testMultipleScheduledSend();
+        testMultipleScheduledSend();
         // testSimpleLoopSend();
     }
 } 
