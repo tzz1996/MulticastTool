@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<multicastConfig>
+    <group address="239.255.27.1" port="8888">
+        <message>Message 1 for group 1</message>
+        <message>Message 2 for group 1</message>
+        <message>Message 3 for group 1</message>
+    </group>
+    <group address="239.255.27.2" port="8889">
+        <message>Message 1 for group 2</message>
+        <message>Message 2 for group 2</message>
+    </group>
+    <group address="239.255.27.3" port="8890">
+        <message>Message 1 for group 3</message>
+        <message>Message 2 for group 3</message>
+        <message>Message 3 for group 3</message>
+        <message>Message 4 for group 3</message>
+    </group>
+</multicastConfig> 
