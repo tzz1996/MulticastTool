@@ -85,33 +85,34 @@ public class MulticastReceiver {
                                 pipeline.addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                                     @Override
                                     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
+                                        // 在消息被释放前复制内容
                                         msg.retain();
+                                        ByteBuf copiedBuf = msg.content().copy();
+                                        msg.release();
+
                                         // 获取对应的消息处理器和线程池
                                         MulticastMessageHandler handler = handlers.get(multicastGroup);
                                         ExecutorService executorService = groupThreadPools.get(multicastGroup);
                                         
                                         if (handler != null && executorService != null) {
-                                            // 在消息被释放前复制内容
-                                            ByteBuf content = msg.content();
-                                            
                                             // 使用对应的线程池处理消息
                                             executorService.submit(() -> {
                                                 try {
-                                                    // 创建新的 DatagramPacket 副本
-//                                                    ByteBuf newContent = ctx.alloc().buffer();
-//                                                    newContent.writeBytes(content);
-                                                    
-                                                    handler.handleMessage(multicastGroup, groupToClassNames.get(multicastGroup), content);
+                                                    handler.handleMessage(multicastGroup, groupToClassNames.get(multicastGroup), copiedBuf);
                                                 } catch (Exception e) {
-                                                    MulticastMessageQueue.offerMessageQueue("Error in handler: " + e.getMessage());
+                                                    MulticastMessageQueue.offerMessageQueue("Error in handler for group: " +
+                                                            multicastGroup.getGroup() +
+                                                            "error: " +
+                                                            e.getMessage()
+                                                    );
+                                                } finally {
+                                                    copiedBuf.release(); // 不要忘记释放
                                                 }
                                             });
                                         } else {
                                             // 如果没有注册处理器，使用默认处理方式
-                                            ByteBuf content = msg.content();
-                                            String received = content.toString(CharsetUtil.UTF_8);
+                                            String received = copiedBuf.toString(CharsetUtil.UTF_8);
                                             MulticastMessageQueue.offerMessageQueue("Received from " + multicastGroup + ": " + received);
-                                            msg.release();
                                         }
                                     }
                                 });

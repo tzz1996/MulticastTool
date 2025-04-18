@@ -13,14 +13,9 @@ public class TestHandler implements MulticastMessageHandler {
     public void handleMessage(MulticastConfig.MulticastGroup group, List<String> classNames, ByteBuf content) {
         try {
             String message = content.toString(CharsetUtil.UTF_8);
-            // 确保消息完整
-            String fullMessage = String.format("Custom handler for %s received: %s", group, message);
-            MulticastMessageQueue.offerMessageQueue(fullMessage);
+            MulticastMessageQueue.offerMessageQueue("Custom handler for " + group + " received: " + message);
         } catch (Exception e) {
             MulticastMessageQueue.offerMessageQueue("Error processing message: " + e.getMessage());
-        } finally {
-            // 确保释放引用
-            content.release();
         }
     }
 }
