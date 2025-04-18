@@ -19,10 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MulticastReceiver {
     // 存储组播组和对应的消息处理器
     private static final Map<MulticastConfig.MulticastGroup, MulticastMessageHandler> handlers = new ConcurrentHashMap<>();
+    // 存储组播组和对应的线程池
+    private static final Map<MulticastConfig.MulticastGroup, ExecutorService> groupThreadPools = new ConcurrentHashMap<>();
     // 一个组播端口对应一个channel通信
     private static final List<Channel> channels = new ArrayList<>();
     
@@ -43,6 +47,9 @@ public class MulticastReceiver {
      */
     public static void registerHandler(MulticastConfig.MulticastGroup group, MulticastMessageHandler handler) {
         handlers.put(group, handler);
+        // 为每个组播组创建一个独立的线程池
+        ExecutorService executorService = Executors.newFixedThreadPool(5); // 可以根据需要调整线程池大小
+        groupThreadPools.put(group, executorService);
     }
     
     /**
@@ -51,6 +58,11 @@ public class MulticastReceiver {
      */
     public static void removeHandler(MulticastConfig.MulticastGroup group) {
         handlers.remove(group);
+        // 关闭并移除对应的线程池
+        ExecutorService executorService = groupThreadPools.remove(group);
+        if (executorService != null) {
+            executorService.shutdown();
+        }
     }
 
     /**
@@ -61,9 +73,6 @@ public class MulticastReceiver {
         EventLoopGroup group = new NioEventLoopGroup();
         try {
             // 为每个组播组创建单独的channel
-            // List<Channel> channels = new ArrayList<>();
-            
-            // 遍历所有组播组配置
             for (MulticastConfig.MulticastGroup multicastGroup : groupToClassNames.keySet()) {
                 Bootstrap bootstrap = new Bootstrap();
                 bootstrap.group(group)
@@ -76,16 +85,33 @@ public class MulticastReceiver {
                                 pipeline.addLast(new SimpleChannelInboundHandler<DatagramPacket>() {
                                     @Override
                                     protected void channelRead0(ChannelHandlerContext ctx, DatagramPacket msg) {
-                                        // 获取对应的消息处理器
+                                        msg.retain();
+                                        // 获取对应的消息处理器和线程池
                                         MulticastMessageHandler handler = handlers.get(multicastGroup);
-                                        if (handler != null) {
-                                            // 调用自定义的消息处理器
-                                            handler.handleMessage(multicastGroup, groupToClassNames.get(multicastGroup) ,msg);
+                                        ExecutorService executorService = groupThreadPools.get(multicastGroup);
+                                        
+                                        if (handler != null && executorService != null) {
+                                            // 在消息被释放前复制内容
+                                            ByteBuf content = msg.content();
+                                            
+                                            // 使用对应的线程池处理消息
+                                            executorService.submit(() -> {
+                                                try {
+                                                    // 创建新的 DatagramPacket 副本
+//                                                    ByteBuf newContent = ctx.alloc().buffer();
+//                                                    newContent.writeBytes(content);
+                                                    
+                                                    handler.handleMessage(multicastGroup, groupToClassNames.get(multicastGroup), content);
+                                                } catch (Exception e) {
+                                                    MulticastMessageQueue.offerMessageQueue("Error in handler: " + e.getMessage());
+                                                }
+                                            });
                                         } else {
                                             // 如果没有注册处理器，使用默认处理方式
                                             ByteBuf content = msg.content();
                                             String received = content.toString(CharsetUtil.UTF_8);
-                                            System.out.println("Received from " + multicastGroup + ": " + received);
+                                            MulticastMessageQueue.offerMessageQueue("Received from " + multicastGroup + ": " + received);
+                                            msg.release();
                                         }
                                     }
                                 });
@@ -125,6 +151,10 @@ public class MulticastReceiver {
             }
         } finally {
             group.shutdownGracefully();
+            // 关闭所有线程池
+            for (ExecutorService executorService : groupThreadPools.values()) {
+                executorService.shutdown();
+            }
         }
     }
 
@@ -142,6 +172,9 @@ public class MulticastReceiver {
 
         // 示例：注册自定义消息处理器
         registerHandler(new MulticastConfig.MulticastGroup("239.255.27.1", 8888), new TestHandler());
+
+        // 启动消息处理
+        MulticastMessageQueue.startMessagePrinter();
 
         joinMulticastGroups(groupToClassNames);
     }
